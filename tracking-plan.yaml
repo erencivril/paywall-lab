@@ -1,0 +1,153 @@
+# Tracking plan: the events the backend sends to analytics.
+#
+# This file is the source of truth. tests/support/tracking_plan.py turns it
+# into JSON Schemas, and the contract tests check every event the running
+# service emits against them. To add or change an event: edit this file, then
+# the code, and the tests will tell you if the two disagree.
+#
+# Every event has these top-level fields (Amplitude HTTP API shape):
+#   insert_id        UUID, unique per event, used by Amplitude to drop duplicates
+#   event_type       one of the names below
+#   user_id          the app user id
+#   time             unix time in milliseconds
+#   platform         ios, android or web, limited per event by "platforms"
+#   event_properties the properties listed per event
+#
+# Properties are required unless they say "required: false". Extra properties
+# are not allowed.
+
+version: 1
+
+shared:
+  # Properties carried by every subscription event.
+  subscription_properties: &subscription_properties
+    original_transaction_id:
+      type: string
+      min_length: 1
+      description: Store transaction id that stays the same across renewals.
+    product_id:
+      type: string
+      enum: [premium_monthly, premium_annual]
+      description: Product the user bought.
+    store:
+      type: string
+      enum: [app_store, play]
+      description: Store the purchase was made in.
+    sandbox:
+      type: boolean
+      description: True for sandbox or test purchases.
+    country:
+      type: string
+      pattern: "^[A-Z]{2}$"
+      description: Store front country, ISO 3166-1 alpha-2.
+    tier:
+      type: string
+      enum: [tier1, ex_tier1]
+      description: Price tier of the country.
+    price_cents:
+      type: integer
+      minimum: 1
+      description: Price of one period in minor units for this tier.
+    currency:
+      type: string
+      pattern: "^[A-Z]{3}$"
+      description: ISO 4217 currency code.
+
+events:
+  paywall_viewed:
+    description: The paywall was requested for a user.
+    trigger: GET /v1/paywall
+    platforms: [web]
+    properties:
+      country:
+        type: string
+        pattern: "^[A-Z]{2}$"
+        description: Country the paywall was requested for, upper case.
+      tier:
+        type: string
+        enum: [tier1, ex_tier1]
+        description: Price tier the country maps to.
+      variant:
+        type: string
+        enum: [control, annual_first]
+        description: A/B variant assigned to the user.
+      config_version:
+        type: integer
+        minimum: 1
+        description: Version of the remote config that produced the paywall.
+
+  trial_started:
+    description: A user started a free trial.
+    trigger: POST /v1/purchases with start_trial, or SUBSCRIBED notification with start_trial
+    platforms: [ios, android]
+    properties:
+      <<: *subscription_properties
+      trial_days:
+        type: integer
+        minimum: 1
+        description: Length of the trial for the user's tier.
+
+  subscription_started:
+    description: A user started a paid subscription without a trial.
+    trigger: POST /v1/purchases without trial, or SUBSCRIBED notification
+    platforms: [ios, android]
+    properties:
+      <<: *subscription_properties
+
+  trial_converted:
+    description: A trial ended and the first paid period began.
+    trigger: DID_RENEW notification while in trial
+    platforms: [ios, android]
+    properties:
+      <<: *subscription_properties
+      expires_at:
+        type: integer
+        minimum: 1
+        description: End of the paid period, unix milliseconds.
+
+  subscription_renewed:
+    description: A paid subscription renewed.
+    trigger: DID_RENEW notification while active
+    platforms: [ios, android]
+    properties:
+      <<: *subscription_properties
+      renewal_count:
+        type: integer
+        minimum: 1
+        description: Number of paid renewals so far, starting at 1.
+      expires_at:
+        type: integer
+        minimum: 1
+        description: End of the renewed period, unix milliseconds.
+
+  subscription_expired:
+    description: A subscription ended without renewing.
+    trigger: EXPIRED notification
+    platforms: [ios, android]
+    properties:
+      <<: *subscription_properties
+
+  subscription_refunded:
+    description: A purchase was refunded and access was revoked.
+    trigger: REFUND notification
+    platforms: [ios, android]
+    properties:
+      <<: *subscription_properties
+      previous_state:
+        type: string
+        enum: [trial, active, expired]
+        description: State the subscription was in before the refund.
+
+  purchase_restored:
+    description: A restore found at least one subscription that still grants access.
+    trigger: POST /v1/restore
+    platforms: [ios, android]
+    properties:
+      store:
+        type: string
+        enum: [app_store, play]
+        description: Store the restore was run against.
+      restored_count:
+        type: integer
+        minimum: 1
+        description: Number of subscriptions that grant access.
