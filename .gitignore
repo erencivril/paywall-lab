@@ -1,0 +1,22 @@
+# Go
+/bin/
+*.test
+*.out
+coverage.txt
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Test output
+reports/
+test-results/
+playwright-report/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+.env
