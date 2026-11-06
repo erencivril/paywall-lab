@@ -4,6 +4,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from tests.contract.scenarios import SCENARIOS
+from tests.support.flows import Subscriber
 from tests.support.tracking_plan import build_schemas, load_plan
 
 
@@ -23,8 +24,6 @@ def schemas():
 @pytest.fixture(scope="session")
 def journeys(api):
     """Run every scenario once and keep the events each one produced."""
-    from tests.support.flows import Subscriber
-
     results = {}
     started_ms = int(time.time() * 1000)
     for name, scenario in SCENARIOS.items():
