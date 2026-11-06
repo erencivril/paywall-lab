@@ -1,0 +1,74 @@
+{
+  "version": 3,
+  "default_tier": "ex_tier1",
+  "tiers": {
+    "tier1": {
+      "countries": [
+        "US",
+        "CA",
+        "GB",
+        "AU",
+        "DE",
+        "FR",
+        "NL",
+        "SE",
+        "CH",
+        "JP"
+      ],
+      "currency": "USD",
+      "trial_days": 7,
+      "prices": {
+        "premium_monthly": 999,
+        "premium_annual": 5999
+      }
+    },
+    "ex_tier1": {
+      "countries": [],
+      "currency": "USD",
+      "trial_days": 3,
+      "prices": {
+        "premium_monthly": 499,
+        "premium_annual": 2999
+      }
+    }
+  },
+  "products": [
+    {
+      "product_id": "premium_monthly",
+      "title": "Monthly",
+      "period": "month",
+      "period_days": 30
+    },
+    {
+      "product_id": "premium_annual",
+      "title": "Yearly",
+      "period": "year",
+      "period_days": 365
+    }
+  ],
+  "experiment": {
+    "name": "paywall_layout",
+    "split": [
+      {
+        "variant": "control",
+        "weight": 50
+      },
+      {
+        "variant": "annual_first",
+        "weight": 50
+      }
+    ]
+  },
+  "variants": {
+    "control": {
+      "title": "Go Premium",
+      "cta_template": "Start {trial_days}-day free trial",
+      "highlight": "premium_monthly"
+    },
+    "annual_first": {
+      "title": "Save with the yearly plan",
+      "cta_template": "Try {trial_days} days free",
+      "highlight": "premium_annual"
+    }
+  }
+}
