@@ -115,10 +115,15 @@ Choices worth knowing about:
 
 ## CI
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) has two jobs:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) has three jobs:
 
 1. `go`: `go vet`, `go test -race` against a PostgreSQL service, `golangci-lint`.
-2. `e2e`: build the image, `docker compose up --wait`, run API and contract tests, run Playwright tests, upload `reports/` as an artifact.
+2. `mutation`: runs the mutation check below.
+3. `e2e`: build the image, `docker compose up --wait`, run API and contract tests, run Playwright tests, upload `reports/` as an artifact.
+
+## Mutation check
+
+Passing tests only matter if they fail when the code is wrong. `scripts/mutation-check.sh` breaks `internal/entitlement/entitlement.go` on purpose in three ways, one at a time, and expects `go test ./internal/entitlement/` to fail each time: a renewal reopens a refunded subscription, a renewal revives an expired subscription, and `HasAccess` ignores the expiry timestamp. The edits are the patch files in `mutation/`. The script prints KILLED or SURVIVED per mutant, restores the file afterwards, and exits non-zero if any mutant survives or a patch no longer applies. Run it locally with `./scripts/mutation-check.sh` (needs Go and a clean working tree for that file). CI runs it as the `mutation` job.
 
 ## Project layout
 

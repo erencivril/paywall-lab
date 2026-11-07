@@ -1,0 +1,15 @@
+Description: A renewal reopens a refunded subscription
+
+diff --git a/internal/entitlement/entitlement.go b/internal/entitlement/entitlement.go
+index a1172fc..ed7647e 100644
+--- a/internal/entitlement/entitlement.go
++++ b/internal/entitlement/entitlement.go
+@@ -74,7 +74,7 @@ func Next(current State, event Event) (next State, changed bool, err error) {
+ 		case EventExpired, EventRefunded:
+ 			return StateRefunded, false, nil
+ 		case EventRenewed:
+-			return current, false, fmt.Errorf("%w: %s while %s", ErrInvalidTransition, event, current)
++			return StateActive, true, nil
+ 		}
+ 	default:
+ 		return current, false, fmt.Errorf("unknown state %q", current)

@@ -1,0 +1,15 @@
+Description: A renewal revives an expired subscription
+
+diff --git a/internal/entitlement/entitlement.go b/internal/entitlement/entitlement.go
+index a1172fc..80238f6 100644
+--- a/internal/entitlement/entitlement.go
++++ b/internal/entitlement/entitlement.go
+@@ -67,7 +67,7 @@ func Next(current State, event Event) (next State, changed bool, err error) {
+ 		case EventRefunded:
+ 			return StateRefunded, true, nil
+ 		case EventRenewed:
+-			return current, false, fmt.Errorf("%w: %s while %s", ErrInvalidTransition, event, current)
++			return StateActive, true, nil
+ 		}
+ 	case StateRefunded:
+ 		switch event {

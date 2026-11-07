@@ -1,0 +1,13 @@
+Description: HasAccess grants access without checking the expiry timestamp
+
+diff --git a/internal/entitlement/entitlement.go b/internal/entitlement/entitlement.go
+index a1172fc..540135f 100644
+--- a/internal/entitlement/entitlement.go
++++ b/internal/entitlement/entitlement.go
+@@ -89,5 +89,5 @@ func HasAccess(state State, expiresAt, now time.Time) bool {
+ 	if state != StateTrial && state != StateActive {
+ 		return false
+ 	}
+-	return expiresAt.After(now)
++	return true
+ }

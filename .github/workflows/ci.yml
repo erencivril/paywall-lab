@@ -42,6 +42,18 @@ jobs:
         with:
           version: v2.15.0
 
+  mutation:
+    name: mutation check (entitlement)
+    needs: go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Inject known bugs and expect the tests to fail
+        run: ./scripts/mutation-check.sh
+
   e2e:
     name: docker compose, API, contract and browser tests
     runs-on: ubuntu-latest
