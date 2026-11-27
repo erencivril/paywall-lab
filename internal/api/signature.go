@@ -127,7 +127,7 @@ func requireSignature(v *SignatureVerifier, next http.HandlerFunc) http.HandlerF
 		if err := v.Verify(r.Header, body); err != nil {
 			// The reason is logged, not returned, so a caller learns nothing
 			// about which check failed.
-			slog.Warn("notification rejected", "reason", err.Error(), "request_id", w.Header().Get("X-Request-Id"))
+			slog.Warn("notification rejected", "reason", err.Error(), "request_id", logSafe(w.Header().Get("X-Request-Id")))
 			writeError(w, http.StatusUnauthorized, "invalid_signature", "notification signature is missing or invalid")
 			return
 		}

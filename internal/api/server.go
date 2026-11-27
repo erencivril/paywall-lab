@@ -168,6 +168,11 @@ func (s *Server) entitlements(w http.ResponseWriter, r *http.Request) {
 func (s *Server) debugEvents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := store.EventFilter{UserID: q.Get("user_id"), EventType: q.Get("event_type")}
+	// Found by the ZAP scan: user_id=%00 reached PostgreSQL and came back as 500.
+	if err := firstError(optionalID("user_id", filter.UserID), optionalID("event_type", filter.EventType)); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
 	events, err := s.svc.Events(r.Context(), filter)
 	if err != nil {
 		s.serverError(w, r, err)
@@ -198,7 +203,7 @@ func (s *Server) writeServiceError(w http.ResponseWriter, r *http.Request, err e
 }
 
 func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.Error("request failed", "error", err, "path", r.URL.Path, "request_id", w.Header().Get("X-Request-Id"))
+	slog.Error("request failed", "error", err, "path", logSafe(r.URL.Path), "request_id", logSafe(w.Header().Get("X-Request-Id")))
 	writeError(w, http.StatusInternalServerError, "internal_error", "something went wrong")
 }
 

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.24-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -9,6 +9,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/serve
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
+USER nonroot:nonroot
 COPY --from=build /out/server /app/server
 COPY config/ /app/config/
 ENV PORT=8080 CONFIG_PATH=/app/config/remote_config.json
