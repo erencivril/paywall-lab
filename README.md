@@ -84,7 +84,7 @@ curl 'localhost:8080/v1/debug/events?user_id=demo'
 | `POST /v1/purchases` | Simulated store purchase. Optional free trial. Optional `transaction_id` makes retries safe. |
 | `POST /v1/restore` | Re-checks a user's purchases on one store. |
 | `GET /v1/entitlements/{user_id}` | Current access and subscriptions. |
-| `POST /v1/store-notifications` | Simulated server notification: `SUBSCRIBED`, `DID_RENEW`, `EXPIRED`, `REFUND`. Idempotent by `notification_id`. |
+| `POST /v1/store-notifications` | Simulated server notification: `SUBSCRIBED`, `DID_RENEW`, `EXPIRED`, `REFUND`. Idempotent by `notification_id`. Requires `X-Paywall-Timestamp` and `X-Paywall-Signature` (HMAC-SHA256 of `<timestamp>.<body>` with `NOTIFICATION_SIGNING_SECRET`); otherwise 401. |
 | `GET /v1/debug/events` | Analytics events for a user. Debug only. |
 | `GET /healthz` | Liveness and database check. |
 | `GET /paywall?country=XX&user_id=...` | The HTML paywall page used by the browser tests. |
@@ -95,13 +95,13 @@ Prices come from `config/remote_config.json`, shaped like a Firebase Remote Conf
 
 ## Test strategy
 
-About 290 automated test cases (counting Go subtests). The full reasoning is in [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+About 335 automated test cases (counting Go subtests). The full reasoning is in [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 | Layer | Where | Count | What it covers |
 |---|---|---|---|
-| Go unit | `internal/entitlement`, `internal/remoteconfig`, `internal/api` | 74 | State machine table, tier lookup, config validation, variant split, request validation |
+| Go unit | `internal/entitlement`, `internal/remoteconfig`, `internal/api` | 105 | State machine table, tier lookup, config validation, variant split, request validation, notification signature checks, security headers |
 | Go with PostgreSQL | `internal/service` | 8 | Full lifecycles, parallel duplicate notifications, rollback of rejected notifications |
-| API (pytest) | `tests/api` | 137 | Price per country, purchases, trial rules, restore, notifications, idempotency, validation |
+| API (pytest) | `tests/api` | 151 | Price per country, purchases, trial rules, restore, notifications, notification authenticity, idempotency, validation, security headers |
 | Contract (pytest) | `tests/contract` | 47 | Every emitted event against JSON Schemas built from `tracking-plan.yaml`, plus checks that the schemas reject bad events |
 | E2E (Playwright) | `tests/e2e` | 24 | What the user sees per tier and variant, purchase and restore from the page, error states, phone viewport |
 
@@ -120,6 +120,8 @@ Choices worth knowing about:
 1. `go`: `go vet`, `go test -race` against a PostgreSQL service, `golangci-lint`.
 2. `mutation`: runs the mutation check below.
 3. `e2e`: build the image, `docker compose up --wait`, run API and contract tests, run Playwright tests, upload `reports/` as an artifact.
+
+Security scans are in a separate workflow, described under Security below.
 
 ## Mutation check
 
@@ -151,9 +153,28 @@ docker-compose.yml     app + PostgreSQL
 Makefile               up, down, unit, lint, api, e2e, test
 ```
 
+## Security
+
+- [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md): STRIDE model of the subscription flows, 21 threats, each marked mitigated (with a test link) or open.
+- [docs/SECURITY_FINDINGS.md](docs/SECURITY_FINDINGS.md): what each scanner found and what was done about it.
+- [docs/SSDF_SAMM_MAPPING.md](docs/SSDF_SAMM_MAPPING.md): which controls map to NIST SSDF and OWASP SAMM practices.
+- [SECURITY.md](SECURITY.md): how to report a vulnerability.
+
+`.github/workflows/security.yml` runs on every push, pull request and weekly:
+
+| Check | Tool |
+|---|---|
+| SAST | CodeQL (Go, Python), Semgrep OSS (`p/default`, `p/golang`, `p/python`); results go to code scanning |
+| Secrets | gitleaks over the full git history |
+| Dependencies | `govulncheck`, `pip-audit` on `tests/requirements.txt`, Dependabot for Go, pip, Actions and Docker |
+| Container | Trivy on the built image, fails on fixable HIGH or CRITICAL |
+| DAST | OWASP ZAP API scan from `docs/openapi.yaml` against the compose stack, fails on High-risk alerts |
+
+Store notifications must carry a valid HMAC signature. The compose file sets a dev-only secret; set `NOTIFICATION_SIGNING_SECRET` for anything else. The server does not start without it.
+
 ## Limits
 
-This is a simulation. It does not verify real store receipts or signed notifications, has no auth, and models one premium entitlement with two products in USD. Details are in the "Known gaps" section of the test plan.
+This is a simulation. It does not verify real store receipts, has no user authentication (the notification endpoint uses a shared-secret signature), and models one premium entitlement with two products in USD. Details are in the "Known gaps" section of the test plan.
 
 ## License
 

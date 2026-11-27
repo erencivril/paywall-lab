@@ -141,7 +141,7 @@ Exit for a change to merge:
 
 ## 8. Known gaps and assumptions
 
-- The notification endpoint is not signed. In a real system the signature check is the first thing to test.
+- The notification endpoint checks an HMAC-SHA256 signature with a shared secret (see `docs/THREAT_MODEL.md`). A real store signs with a certificate chain (App Store JWS) or an OIDC token (Google Pub/Sub), which is not modelled.
 - Time passes only through notifications. There is no clock control, so "access ends exactly at expiry" is covered in Go unit tests, not end to end.
 - Grace period, billing retry, upgrades and downgrades between plans, family sharing and offer codes are not modelled.
 - Out-of-order delivery is handled by the state machine rules above, but the rules themselves are a decision for this project, not a copy of any store's behaviour.
