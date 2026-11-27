@@ -1,0 +1,113 @@
+openapi: 3.0.3
+info:
+  title: paywall-lab API
+  version: "1.0"
+  description: >-
+    Request shapes for the paywall-lab backend. Used by the ZAP API scan in
+    .github/workflows/security.yml. Response bodies are described loosely on
+    purpose; the tests in tests/ are the source of truth for them.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Liveness and database check
+      responses:
+        "200": {description: ok}
+        "503": {description: database unavailable}
+  /v1/paywall:
+    get:
+      summary: Paywall for a country tier and the user's A/B variant
+      parameters:
+        - {name: country, in: query, required: true, schema: {type: string, pattern: "^[A-Za-z]{2}$", example: US}}
+        - {name: user_id, in: query, required: true, schema: {type: string, pattern: "^[A-Za-z0-9._:@-]{1,128}$", example: zap-user}}
+      responses:
+        "200": {description: paywall, content: {application/json: {schema: {type: object}}}}
+        "400": {description: invalid request}
+  /v1/purchases:
+    post:
+      summary: Simulated store purchase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, product_id, store, country]
+              properties:
+                user_id: {type: string, pattern: "^[A-Za-z0-9._:@-]{1,128}$", example: zap-user}
+                product_id: {type: string, enum: [premium_monthly, premium_annual]}
+                store: {type: string, enum: [app_store, play]}
+                country: {type: string, pattern: "^[A-Za-z]{2}$", example: US}
+                sandbox: {type: boolean, example: true}
+                start_trial: {type: boolean, example: false}
+                transaction_id: {type: string, pattern: "^[A-Za-z0-9._:@-]{1,128}$"}
+      responses:
+        "201": {description: created, content: {application/json: {schema: {type: object}}}}
+        "200": {description: duplicate transaction_id, content: {application/json: {schema: {type: object}}}}
+        "400": {description: invalid request}
+        "409": {description: state conflict}
+        "422": {description: unknown product}
+  /v1/restore:
+    post:
+      summary: Re-check a user's purchases on one store
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, store]
+              properties:
+                user_id: {type: string, pattern: "^[A-Za-z0-9._:@-]{1,128}$", example: zap-user}
+                store: {type: string, enum: [app_store, play]}
+      responses:
+        "200": {description: result, content: {application/json: {schema: {type: object}}}}
+        "400": {description: invalid request}
+  /v1/entitlements/{user_id}:
+    get:
+      summary: Current access and subscriptions
+      parameters:
+        - {name: user_id, in: path, required: true, schema: {type: string, pattern: "^[A-Za-z0-9._:@-]{1,128}$", example: zap-user}}
+      responses:
+        "200": {description: entitlements, content: {application/json: {schema: {type: object}}}}
+        "400": {description: invalid request}
+  /v1/store-notifications:
+    post:
+      summary: Store server notification. Requires X-Paywall-Timestamp and X-Paywall-Signature.
+      parameters:
+        - {name: X-Paywall-Timestamp, in: header, required: true, schema: {type: string, example: "1700000000"}}
+        - {name: X-Paywall-Signature, in: header, required: true, schema: {type: string, example: "v1=00"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [notification_id, type, original_transaction_id]
+              properties:
+                notification_id: {type: string, pattern: "^[A-Za-z0-9._:@-]{1,128}$", example: zap-n-1}
+                type: {type: string, enum: [SUBSCRIBED, DID_RENEW, EXPIRED, REFUND]}
+                original_transaction_id: {type: string, pattern: "^[A-Za-z0-9._:@-]{1,128}$", example: zap-txn-1}
+                expires_at: {type: string, format: date-time}
+                user_id: {type: string}
+                product_id: {type: string}
+                store: {type: string, enum: [app_store, play]}
+                country: {type: string}
+                sandbox: {type: boolean}
+                start_trial: {type: boolean}
+      responses:
+        "200": {description: applied, duplicate or no_change, content: {application/json: {schema: {type: object}}}}
+        "400": {description: invalid request}
+        "401": {description: missing or invalid signature}
+        "404": {description: unknown transaction}
+        "409": {description: invalid transition}
+  /v1/debug/events:
+    get:
+      summary: Analytics events for a user. Only present when ENABLE_DEBUG_ENDPOINTS=true.
+      parameters:
+        - {name: user_id, in: query, required: true, schema: {type: string, example: zap-user}}
+        - {name: event_type, in: query, required: false, schema: {type: string}}
+      responses:
+        "200": {description: events, content: {application/json: {schema: {type: object}}}}
+        "404": {description: debug endpoints are off}

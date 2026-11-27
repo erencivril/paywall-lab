@@ -1,0 +1,188 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Dummy value for CI only. It protects nothing.
+  NOTIFICATION_SIGNING_SECRET: ci-only-dummy-secret
+
+jobs:
+  codeql:
+    name: SAST - CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, python]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        if: matrix.language == 'go'
+        with:
+          go-version-file: go.mod
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  semgrep:
+    name: SAST - Semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: semgrep scan
+        run: >-
+          semgrep scan
+          --config p/default --config p/golang --config p/python
+          --sarif --output semgrep.sarif
+          --metrics off --error
+          --exclude tests/.venv
+      - name: Count findings
+        if: ${{ !cancelled() }}
+        run: python3 -c "import json; r=json.load(open('semgrep.sarif'))['runs'][0]['results']; print('semgrep findings:', len(r)); [print(x['ruleId'], x['locations'][0]['physicalLocation']['artifactLocation']['uri']) for x in r]"
+      - uses: github/codeql-action/upload-sarif@v4
+        if: ${{ !cancelled() }}
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  gitleaks:
+    name: Secrets - gitleaks (full history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          VERSION=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" -o gitleaks.tgz
+          tar -xzf gitleaks.tgz gitleaks
+      - name: Scan all commits
+        run: ./gitleaks git --verbose --redact --exit-code 1 --report-format sarif --report-path gitleaks.sarif .
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: gitleaks-report
+          path: gitleaks.sarif
+          if-no-files-found: ignore
+
+  sca:
+    name: SCA - govulncheck and pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r tests/requirements.txt --progress-spinner off
+
+  trivy:
+    name: Container - Trivy image scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the image
+        run: docker build -t paywall-lab:scan .
+      - name: Trivy (report)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: paywall-lab:scan
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+      - uses: github/codeql-action/upload-sarif@v4
+        if: ${{ !cancelled() }}
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+      - name: Trivy (gate)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: paywall-lab:scan
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  dast:
+    name: DAST - OWASP ZAP API scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the stack
+        run: docker compose up -d --build --wait
+      - name: Serve the OpenAPI file
+        run: |
+          python3 -m http.server 8000 --directory docs --bind 127.0.0.1 &
+          sleep 2
+          curl -fsS http://localhost:8000/openapi.yaml | head -3
+      - name: ZAP API scan
+        uses: zaproxy/action-api-scan@v0.10.0
+        with:
+          target: http://localhost:8000/openapi.yaml
+          format: openapi
+          rules_file_name: .zap/rules.tsv
+          cmd_options: -O http://localhost:8080
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap-report
+      - name: Fail on High-risk alerts only
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          report = json.load(open("report_json.json"))
+          alerts = [(a["riskcode"], a["name"], len(a.get("instances", []))) for s in report["site"] for a in s["alerts"]]
+          for code, name, n in sorted(alerts, reverse=True):
+              print(f"risk {code} {name} ({n} instances)")
+          print("ZAP alerts total:", len(alerts))
+          high = [a for a in alerts if int(a[0]) >= 3]
+          print("ZAP high-risk alerts:", len(high))
+          sys.exit(1 if high else 0)
+          PY
+      - name: App logs
+        if: failure()
+        run: docker compose logs app
+      - name: Stop the stack
+        if: ${{ !cancelled() }}
+        run: docker compose down
