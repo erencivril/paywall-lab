@@ -127,6 +127,7 @@ jobs:
           image-ref: paywall-lab:scan
           format: sarif
           output: trivy.sarif
+          limit-severities-for-sarif: true
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "0"

@@ -1,3 +1,5 @@
 # ZAP rule configuration for the API scan (tab separated: rule id, action, comment).
 # Every IGNORE line must say why. Findings are documented in docs/SECURITY_FINDINGS.md.
 # Actions: IGNORE, INFO, WARN, FAIL. The workflow itself fails the job only on High-risk alerts.
+10096	IGNORE	(Timestamp Disclosure - Unix) matches the example value 1700000000 in docs/openapi.yaml, served by the scan helper on :8000. Not an app response.
+100001	IGNORE	(Unexpected Content-Type) the HTML paywall page is reachable by the spider but is not part of the JSON API spec.
