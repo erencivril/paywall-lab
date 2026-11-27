@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -57,10 +58,25 @@ func run(port string) error {
 		return err
 	}
 
+	// Without a secret anyone could post a SUBSCRIBED or REFUND notification,
+	// so the server does not start.
+	tolerance := api.DefaultTolerance
+	if v := os.Getenv("NOTIFICATION_TOLERANCE_SECONDS"); v != "" {
+		secs, err := strconv.Atoi(v)
+		if err != nil || secs <= 0 {
+			return errors.New("NOTIFICATION_TOLERANCE_SECONDS must be a positive integer")
+		}
+		tolerance = time.Duration(secs) * time.Second
+	}
+	verifier, err := api.NewSignatureVerifier(os.Getenv("NOTIFICATION_SIGNING_SECRET"), tolerance)
+	if err != nil {
+		return errors.New("NOTIFICATION_SIGNING_SECRET is not set")
+	}
+
 	debug := env("ENABLE_DEBUG_ENDPOINTS", "false") == "true"
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           api.NewHandler(service.New(cfg, st), debug),
+		Handler:           api.NewHandler(service.New(cfg, st), debug, verifier),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

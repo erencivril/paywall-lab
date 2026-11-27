@@ -21,8 +21,9 @@ type Server struct {
 }
 
 // NewHandler wires the routes and middleware. Debug endpoints are only
-// registered when debug is true.
-func NewHandler(svc *service.Service, debug bool) http.Handler {
+// registered when debug is true. Store notifications are only accepted with a
+// valid signature from verifier; a nil verifier rejects them all.
+func NewHandler(svc *service.Service, debug bool, verifier *SignatureVerifier) http.Handler {
 	s := &Server{svc: svc, debugEnabled: debug}
 
 	mux := http.NewServeMux()
@@ -31,7 +32,7 @@ func NewHandler(svc *service.Service, debug bool) http.Handler {
 	mux.HandleFunc("POST /v1/purchases", s.purchase)
 	mux.HandleFunc("POST /v1/restore", s.restore)
 	mux.HandleFunc("GET /v1/entitlements/{user_id}", s.entitlements)
-	mux.HandleFunc("POST /v1/store-notifications", s.notification)
+	mux.HandleFunc("POST /v1/store-notifications", requireSignature(verifier, s.notification))
 	if debug {
 		mux.HandleFunc("GET /v1/debug/events", s.debugEvents)
 	}
@@ -46,7 +47,7 @@ func NewHandler(svc *service.Service, debug bool) http.Handler {
 	assets, _ := fs.Sub(web.FS, ".")
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServerFS(assets)))
 
-	return recoverPanics(requestLog(mux))
+	return recoverPanics(requestLog(securityHeaders(mux)))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

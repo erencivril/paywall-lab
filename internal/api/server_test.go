@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/erencivril/paywall-lab/internal/remoteconfig"
 	"github.com/erencivril/paywall-lab/internal/service"
@@ -18,13 +19,25 @@ func newTestHandler(t *testing.T, debug bool) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(service.New(cfg, nil), debug)
+	v, err := NewSignatureVerifier(testSecret, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewHandler(service.New(cfg, nil), debug, v)
 }
+
+const testSecret = "unit-test-secret"
 
 func do(h http.Handler, method, target, contentType, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	if target == "/v1/store-notifications" {
+		// These cases test validation, so give them a valid signature.
+		ts, sig := Sign(testSecret, time.Now(), []byte(body))
+		req.Header.Set(HeaderTimestamp, ts)
+		req.Header.Set(HeaderSignature, sig)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

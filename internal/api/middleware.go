@@ -55,3 +55,17 @@ func recoverPanics(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// securityHeaders sets response headers that browsers use to limit what the
+// paywall page can do. The page loads only its own script and stylesheet, so
+// the policy allows same-origin resources and nothing else.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		next.ServeHTTP(w, r)
+	})
+}

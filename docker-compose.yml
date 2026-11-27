@@ -25,6 +25,8 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://paywall:paywall@db:5432/paywall?sslmode=disable
+      # Dev-only default so the stack starts. Set a real value anywhere else.
+      NOTIFICATION_SIGNING_SECRET: ${NOTIFICATION_SIGNING_SECRET:-dev-only-notification-secret}
       ENABLE_DEBUG_ENDPOINTS: "true"
       LOG_LEVEL: info
     ports:
